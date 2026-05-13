@@ -1,0 +1,52 @@
+:root {
+  /* Палитра */
+  --color-bg: #fbf7f1;          /* молочный фон */
+  --color-bg-soft: #f3ece0;     /* светло-бежевый */
+  --color-surface: #ffffff;
+  --color-surface-2: #f7f3ea;
+
+  --color-green-soft: #c7d4ad;  /* мягкий зелёный */
+  --color-green: #a3b07a;
+  --color-olive: #7a8b5a;       /* оливковый акцент */
+  --color-olive-deep: #5e6c43;
+
+  --color-berry: #c4677b;       /* тёплый ягодный */
+  --color-berry-deep: #a85067;
+  --color-berry-soft: #f3dde2;
+
+  --color-text: #2d2a26;
+  --color-text-muted: #6b6660;
+  --color-text-soft: #8b8680;
+
+  --color-border: #e9e2d3;
+  --color-border-soft: #f0ead9;
+
+  --color-warn: #c98b3c;
+  --color-warn-soft: #f8ecd6;
+
+  /* Радиусы */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  /* Тени */
+  --shadow-sm: 0 1px 2px rgba(60, 50, 40, 0.04), 0 1px 1px rgba(60, 50, 40, 0.03);
+  --shadow-md: 0 4px 16px rgba(80, 70, 50, 0.06), 0 1px 3px rgba(80, 70, 50, 0.04);
+  --shadow-lg: 0 12px 32px rgba(80, 70, 50, 0.08), 0 2px 6px rgba(80, 70, 50, 0.05);
+
+  /* Шрифты и интервалы */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 56px;
+
+  --container-max: 560px;
+}
