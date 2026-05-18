@@ -1,5 +1,5 @@
 /* Офтальмо-справочник — service worker, cache-first */
-const CACHE = 'oftalmo-v3';
+const CACHE = 'oftalmo-v4';
 const ASSETS = [
   './',
   './index.html',
