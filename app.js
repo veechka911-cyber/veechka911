@@ -149,6 +149,7 @@ const SECTIONS = [
   { id: 'strab',     title: 'Косоглазие / амблиопия', icon: '↔️', icd: 'H49-H53' },
   { id: 'trauma',    title: 'Травмы и ожоги', icon: '🩹', icd: 'S05/T26' },
   { id: 'pediatric', title: 'Детская офтальмология', icon: '👶', icd: 'H35.1/Q' },
+  { id: 'systemic',  title: 'Системные заболевания', icon: '🩺', icd: 'разн.' },
   { id: 'urgent',    title: 'Неотложные состояния', icon: '🚨', icd: 'разн.', urgent: true }
 ];
 
