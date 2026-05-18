@@ -208,18 +208,44 @@ function renderDiagnosis(id){
   titleEl.textContent = d.name;
   backBtn.style.display = '';
   const age = state.age;
+  const ageLabel = age === 'child' ? 'ребёнка' : age === 'preg' ? 'беременной' : 'взрослого';
+  // Возрастные/беременностные противопоказания препарата
+  const drugWarn = (drug) => {
+    if (!drug) return null;
+    if (age === 'preg') {
+      const p = String(drug.preg||'').toUpperCase();
+      if (p.includes('X') || /противопоказ/i.test(drug.preg||'')) return {level:'contra', text:'противопоказан при беременности'};
+      if (p.includes('D')) return {level:'caution', text:'категория D — только по жизненным показаниям'};
+      if (p.includes('C')) return {level:'caution', text:'категория C — польза/риск'};
+    }
+    if (age === 'child') {
+      const a = String(drug.age||'').toLowerCase();
+      if (/с 18|с осторожностью у детей|формально с 18/.test(a)) return {level:'caution', text:'у детей — с осторожностью / формально с 18 лет'};
+      if (/противопоказ/.test(a)) return {level:'contra', text:'противопоказан у детей'};
+    }
+    return null;
+  };
   const rxBlock = (arr) => arr && arr.length ? `<ul>${arr.map(x => {
     if (typeof x === 'string') return `<li>${esc(x)}</li>`;
     if (x.drug) {
       const drug = DRUGS.find(dr => dr.id === x.drug);
       const inn = drug ? drug.inn : x.drug;
       const conc = drug && drug.conc ? ' ' + drug.conc : '';
-      return `<li><a href="#rx/${esc(x.drug)}"><b>${esc(inn)}${esc(conc)}</b></a>${x.dose?' — '+esc(x.dose):''}${x.note?' <span style="color:var(--muted)">('+esc(x.note)+')</span>':''}</li>`;
+      const w = drugWarn(drug);
+      const cls = w ? ` class="rx-${w.level}"` : '';
+      const wTag = w ? ` <span class="rx-warn">⚠ ${esc(w.text)}</span>` : '';
+      return `<li${cls}><a href="#rx/${esc(x.drug)}"><b>${esc(inn)}${esc(conc)}</b></a>${x.dose?' — '+esc(x.dose):''}${x.note?' <span style="color:var(--muted)">('+esc(x.note)+')</span>':''}${wTag}</li>`;
     }
     return '';
   }).join('')}</ul>` : '<p style="color:var(--muted)">—</p>';
   const tx = d.tx || {};
+  const hasAgeBlock = (age === 'child' && d.tx_child) || (age === 'preg' && d.tx_preg);
   const txByAge = (age === 'child' && d.tx_child) ? d.tx_child : (age === 'preg' && d.tx_preg) ? d.tx_preg : tx;
+  const ageBanner = age === 'adult'
+    ? ''
+    : (hasAgeBlock
+        ? `<div class="age-note age-note--ok">✓ Тактика адаптирована для ${ageLabel}.</div>`
+        : `<div class="age-note age-note--warn">⚠ Отдельная тактика для ${ageLabel} в справочнике не описана — показано взрослое лечение. Сверьтесь с противопоказаниями каждого препарата (категория беременности / возрастные ограничения подсвечены ниже).</div>`);
   view.innerHTML = `
     <article class="card">
       ${d.urgent ? `<div class="urgent-banner">🚨 ${esc(d.urgent)}</div>` : ''}
@@ -236,6 +262,7 @@ function renderDiagnosis(id){
         <button data-age="child" class="${age==='child'?'active':''}">Ребёнок</button>
         <button data-age="preg" class="${age==='preg'?'active':''}">Беременная</button>
       </div>
+      ${ageBanner}
       ${d.desc ? `<details open><summary>📖 Описание</summary><p>${esc(d.desc)}</p>${d.etiol?`<p><b>Этиология:</b> ${esc(d.etiol)}</p>`:''}${d.classes?`<p><b>Классификация:</b> ${esc(d.classes)}</p>`:''}</details>` : ''}
       ${d.sx && d.sx.length ? `<details open><summary>🔎 Симптомы (жалобы)</summary><ul>${d.sx.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
       ${d.dx && d.dx.length ? `<details open><summary>🔬 Диагностика</summary><ul>${d.dx.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}

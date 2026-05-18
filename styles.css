@@ -255,6 +255,18 @@ table.scale th { background: var(--surface-2); font-weight: 600; }
 }
 .age-toggle button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+.age-note {
+  margin: 4px 0 12px; padding: 8px 10px;
+  border-radius: 8px; font-size: 13px; line-height: 1.4;
+}
+.age-note--ok { background: rgba(46, 160, 67, 0.12); border-left: 3px solid #2ea043; color: var(--text); }
+.age-note--warn { background: rgba(255, 169, 0, 0.12); border-left: 3px solid #ffa900; color: var(--text); }
+
+li.rx-caution { background: rgba(255, 169, 0, 0.08); border-left: 2px solid #ffa900; padding-left: 6px; }
+li.rx-contra { background: rgba(220, 53, 69, 0.10); border-left: 2px solid #dc3545; padding-left: 6px; }
+li.rx-contra a { text-decoration: line-through; }
+.rx-warn { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--surface-2); font-size: 11px; color: var(--muted); }
+
 @media (min-width: 700px) {
   main { padding: 16px 20px; }
   .tile-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
