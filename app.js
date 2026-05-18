@@ -329,7 +329,9 @@ function renderDrugsHome(){
     <div class="section-title">Группы (ATC)</div>
     <div class="tile-grid">
       ${ATC_TREE.map(g => {
-        const c = DRUGS.filter(d => d.atc && (d.atc===g.code || d.atc.startsWith(g.code))).length;
+        const c = (g.code === 'SYST' || g.code === 'SIDE')
+          ? DRUGS.filter(d => d.cat === g.code).length
+          : DRUGS.filter(d => d.atc && (d.atc===g.code || d.atc.startsWith(g.code))).length;
         return `<a class="tile" href="#atc/${g.code}"><div class="t">${esc(g.title)}</div><div class="s">${g.code} · ${c}</div></a>`;
       }).join('')}
     </div>
@@ -346,7 +348,11 @@ function renderDrugsHome(){
 function renderATC(code){
   titleEl.textContent = 'ATC ' + code;
   backBtn.style.display = '';
-  const list = DRUGS.filter(d => d.atc && (d.atc===code || d.atc.startsWith(code))).sort((a,b)=>a.inn.localeCompare(b.inn,'ru'));
+  const matches = d => {
+    if (code === 'SYST' || code === 'SIDE') return d.cat === code;
+    return d.atc && (d.atc === code || d.atc.startsWith(code));
+  };
+  const list = DRUGS.filter(matches).sort((a,b)=>a.inn.localeCompare(b.inn,'ru'));
   const node = ATC_TREE.find(g => g.code===code);
   const subs = node && node.sub ? `
     <div class="section-title">Подгруппы</div>
