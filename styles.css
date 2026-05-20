@@ -77,8 +77,17 @@ a:hover { text-decoration: underline; }
 #search:focus { outline: 2px solid var(--accent-2); border-color: var(--accent-2); }
 .clear-btn {
   width: 44px; height: 44px;
-  background: var(--surface-2); color: var(--muted);
-  border: 1px solid var(--border); border-radius: 50%; font-size: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-2, var(--accent)); color: #fff;
+  border: 1px solid var(--accent-2, var(--accent)); border-radius: 50%;
+  font-size: 18px; font-weight: 700; line-height: 1; cursor: pointer;
+  flex-shrink: 0;
+}
+.clear-btn:active { transform: scale(0.92); }
+/* Скрыть нативный X у type=search во всех браузерах (если кто-то вернёт type=search) */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
 }
 
 main { padding: 12px; max-width: 900px; margin: 0 auto; }

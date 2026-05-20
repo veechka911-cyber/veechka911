@@ -74,6 +74,15 @@ $('#themeBtn').addEventListener('click', () => {
 
 // ─── search ─────────────────────────────────────────────────────
 let searchTimer = null;
+searchInp.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    searchInp.value = '';
+    clearBtn.style.display = 'none';
+    if (parseHash().route === 'search') go('home');
+    searchInp.blur();
+  }
+});
 searchInp.addEventListener('input', () => {
   clearTimeout(searchTimer);
   clearBtn.style.display = searchInp.value ? '' : 'none';
@@ -84,10 +93,22 @@ searchInp.addEventListener('input', () => {
     }
   }, 180);
 });
-clearBtn.addEventListener('click', () => {
-  searchInp.value = ''; clearBtn.style.display = 'none';
+clearBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  searchInp.value = '';
+  clearBtn.style.display = 'none';
+  if (parseHash().route === 'search') go('home');
+  // Возвращаем фокус для удобства повторного ввода — но не показываем клавиатуру если пустое поле на мобильном
+  setTimeout(() => searchInp.focus(), 0);
+});
+// Также реагируем на touchend для надёжности на iOS
+clearBtn.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  searchInp.value = '';
+  clearBtn.style.display = 'none';
+  if (parseHash().route === 'search') go('home');
   searchInp.focus();
-  if (parseHash().route === 'search') history.back();
 });
 
 // ─── bottom nav ─────────────────────────────────────────────────
@@ -315,7 +336,22 @@ const ATC_TREE = [
   { code: 'S01K', title: 'Хирургические вспомогательные' },
   { code: 'S01L', title: 'Анти-VEGF' },
   { code: 'S01X', title: 'Кератопротекторы, метаболики, прочие' },
-  { code: 'SYST', title: 'Системные препараты (для офтальмолога)' },
+  { code: 'SYST', title: 'Системные препараты (для офтальмолога)', sub: [
+    { code: 'KFG_NOOT',   title: 'Ноотропные и нейропротекторы' },
+    { code: 'KFG_REGEN',  title: 'Стимуляторы регенерации тканей' },
+    { code: 'KFG_VASC',   title: 'Препараты, улучшающие мозговое и глазное кровообращение' },
+    { code: 'KFG_METAB',  title: 'Метаболики и энергопротекторы' },
+    { code: 'KFG_ANTIOX', title: 'Антиоксидантные средства' },
+    { code: 'KFG_IMMUNO', title: 'Иммуносупрессоры системные' },
+    { code: 'KFG_ANTIB',  title: 'Антибиотики системные' },
+    { code: 'KFG_ANTIVIR',title: 'Противовирусные системные' },
+    { code: 'KFG_ANTIFUN',title: 'Противогрибковые системные' },
+    { code: 'KFG_GCS',    title: 'ГКС системные' },
+    { code: 'KFG_NSAID',  title: 'НПВП и анальгетики системные' },
+    { code: 'KFG_ANTIHIST',title:'Антигистаминные системные' },
+    { code: 'KFG_DIUR',   title: 'Диуретики и осмотики' },
+    { code: 'KFG_ENZYME', title: 'Ферменты и гемостатики' }
+  ]},
   { code: 'SIDE', title: 'Препараты с глазными побочными эффектами' }
 ];
 
@@ -350,6 +386,10 @@ function renderATC(code){
   backBtn.style.display = '';
   const matches = d => {
     if (code === 'SYST' || code === 'SIDE') return d.cat === code;
+    if (code.startsWith('KFG_')) {
+      const kfg = Array.isArray(d.kfg) ? d.kfg : (d.kfg ? [d.kfg] : []);
+      return kfg.includes(code);
+    }
     return d.atc && (d.atc === code || d.atc.startsWith(code));
   };
   const list = DRUGS.filter(matches).sort((a,b)=>a.inn.localeCompare(b.inn,'ru'));
@@ -358,7 +398,9 @@ function renderATC(code){
     <div class="section-title">Подгруппы</div>
     <div class="tile-grid">
       ${node.sub.map(s => {
-        const c = DRUGS.filter(d => d.atc && d.atc.startsWith(s.code)).length;
+        const c = s.code.startsWith('KFG_')
+          ? DRUGS.filter(d => { const k = Array.isArray(d.kfg) ? d.kfg : (d.kfg ? [d.kfg] : []); return k.includes(s.code); }).length
+          : DRUGS.filter(d => d.atc && d.atc.startsWith(s.code)).length;
         return `<a class="tile" href="#atc/${s.code}"><div class="t">${esc(s.title)}</div><div class="s">${s.code} · ${c}</div></a>`;
       }).join('')}
     </div>` : '';
@@ -415,6 +457,8 @@ function renderDrug(id){
         <button class="btn ghost" style="padding:2px 10px;min-height:auto;font-size:12px" onclick="window.__toggleFav('rx','${esc(d.id)}')">${isFav('rx',d.id)?'★':'☆'}</button>
       </div>
       ${pills.length ? `<div style="margin:8px 0">${pills.join(' ')}</div>` : ''}
+      ${d.kfg_full && d.kfg_full.length ? `<details><summary>📋 Клинико-фармакологические группы (КФГ/ФТГ)</summary><ul>${d.kfg_full.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+      ${d.manufacturers && d.manufacturers.length ? `<details><summary>🏭 Производители</summary><p>${esc(d.manufacturers.join(', '))}</p></details>` : ''}
       ${d.mech ? `<details open><summary>🔬 Механизм действия</summary><p>${esc(d.mech)}</p></details>` : ''}
       ${d.ind && d.ind.length ? `<details open><summary>✅ Показания</summary><ul>${d.ind.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
       ${d.dose ? `<details open><summary>💉 Дозировка (офтальмология)</summary>${typeof d.dose==='string'?`<p>${esc(d.dose)}</p>`:`<ul>${d.dose.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`}</details>` : ''}
