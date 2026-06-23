@@ -304,57 +304,125 @@ def crossfade(a_frames, b_frames, dur=0.5):
     return out
 
 
-# ── музыка (синтез) ─────────────────────────────────────────────────────────
-def note(freq, dur, sr=SR, kind="bell", vol=0.5):
+# ── музыка (весёлая полька / марш в стиле советских комедий) ─────────────────
+def note(freq, dur, sr=SR, kind="trumpet", vol=0.5):
     t = np.linspace(0, dur, int(sr * dur), endpoint=False)
-    if kind == "bell":
-        env = np.exp(-3.5 * t / dur)
+    if kind == "trumpet":
+        # медный духовой: богатый обертоновый ряд + резкая атака
+        env = np.exp(-2.5 * t / max(dur, 0.01)) * (1 - np.exp(-80 * t))
         wave = (np.sin(2*np.pi*freq*t)
-                + 0.5 * np.sin(2*np.pi*2*freq*t) * np.exp(-6*t/dur)
-                + 0.25 * np.sin(2*np.pi*3*freq*t) * np.exp(-9*t/dur))
+                + 0.7 * np.sin(2*np.pi*2*freq*t)
+                + 0.5 * np.sin(2*np.pi*3*freq*t)
+                + 0.3 * np.sin(2*np.pi*4*freq*t)
+                + 0.15 * np.sin(2*np.pi*5*freq*t))
+    elif kind == "tuba":
+        # туба (бас)
+        env = np.exp(-1.8 * t / max(dur, 0.01)) * (1 - np.exp(-60 * t))
+        wave = (np.sin(2*np.pi*freq*t)
+                + 0.9 * np.sin(2*np.pi*2*freq*t)
+                + 0.4 * np.sin(2*np.pi*3*freq*t))
+    elif kind == "clarinet":
+        # кларнет: нечётные гармоники
+        env = np.minimum(1.0, t / (dur*0.05)) * np.exp(-1.2 * t / max(dur, 0.01))
+        wave = (np.sin(2*np.pi*freq*t)
+                + 0.6 * np.sin(2*np.pi*3*freq*t)
+                + 0.3 * np.sin(2*np.pi*5*freq*t)
+                + 0.15 * np.sin(2*np.pi*7*freq*t))
+    elif kind == "snare":
+        # малый барабан: шум + резкая атака
+        env = np.exp(-25 * t / max(dur, 0.001))
+        wave = np.random.default_rng(42).standard_normal(len(t)).astype(np.float32) * 0.8
+        wave += np.sin(2*np.pi*200*t) * 0.3
+    elif kind == "kick":
+        env = np.exp(-18 * t / max(dur, 0.001))
+        wave = np.sin(2*np.pi*freq * np.exp(-15*t) * t)
     else:  # pad
-        env = np.minimum(1.0, t / (dur*0.3)) * np.minimum(1.0, (dur - t) / (dur*0.4))
+        env = np.minimum(1.0, t / (dur*0.2)) * np.minimum(1.0, (dur - t) / (dur*0.3))
         wave = np.sin(2*np.pi*freq*t) + 0.4*np.sin(2*np.pi*freq*2*t)
     return (wave * env * vol).astype(np.float32)
 
 
 def make_music(total_sec):
-    """тёплая мелодия-шкатулка по кругу C–G–Am–F"""
-    N = {"C3":130.81,"E3":164.81,"G3":196.00,"A3":220.00,"F3":174.61,
-         "C4":261.63,"D4":293.66,"E4":329.63,"F4":349.23,"G4":392.00,
-         "A4":440.00,"B4":493.88,"C5":523.25,"D5":587.33,"E5":659.25}
-    chords = [
-        ("C", ["C4","E4","G4","C5"], "C3"),
-        ("G", ["B4","D5","G4","D4"], "G3"),
-        ("Am",["A4","C5","E5","E4"], "A3"),
-        ("F", ["A4","C5","F4","C4"], "F3"),
+    """
+    Весёлый духовой оркестр — полька-марш в стиле советских комедий.
+    Гармония C-dur: C F G C, темп ~130 bpm.
+    """
+    N = {
+        "C2": 65.41, "G2": 98.00, "F2": 87.31, "D2": 73.42,
+        "C3":130.81, "D3":146.83, "E3":164.81, "F3":174.61,
+        "G3":196.00, "A3":220.00, "B3":246.94,
+        "C4":261.63, "D4":293.66, "E4":329.63, "F4":349.23,
+        "G4":392.00, "A4":440.00, "B4":493.88,
+        "C5":523.25, "D5":587.33, "E5":659.25, "F5":698.46,
+        "G5":783.99, "A5":880.00,
+    }
+    # мелодия польки (2 такта × 2 варианта = 16 нот)
+    melody_A = ["C5","E5","G5","E5", "C5","G4","E4","G4"]
+    melody_B = ["F5","A5","F5","D5", "C5","E5","C5","G4"]
+    melody_C = ["G4","B4","D5","B4", "G4","D4","B3","D4"]
+
+    beat = 60/130  # длительность одной четверти при 130 bpm
+    b8 = beat / 2  # восьмая
+
+    # аккорды (бас + квинта)
+    chord_seq = [
+        (["C2","G2"], ["C3","E3","G3"]),  # C
+        (["F2","C3"], ["F3","A3","C4"]),  # F — исправлено
+        (["G2","D3"], ["G3","B3","D4"]),  # G7
+        (["C2","G2"], ["C3","E3","G3"]),  # C
     ]
-    beat = 0.5  # сек на ноту
+
     buf = np.zeros(int(SR * (total_sec + 2)), dtype=np.float32)
     pos = 0.0
-    ci = 0
+    ci = 0  # счётчик тактов
+
     while pos < total_sec:
-        name, arp, bass = chords[ci % len(chords)]
-        # бас-пад на весь такт
-        bass_w = note(N[bass], beat*4, kind="pad", vol=0.10)
-        s = int(pos * SR)
-        e = min(len(buf), s + len(bass_w))
-        buf[s:e] += bass_w[:e-s]
-        # арпеджио-шкатулка
-        pattern = [0, 1, 2, 3, 2, 1, 2, 3]
-        for k, idx in enumerate(pattern):
-            f = N[arp[idx % len(arp)]] * 2  # на октаву выше — «шкатулка»
-            nw = note(f, beat, kind="bell", vol=0.22)
-            ns = int((pos + k*beat*0.5) * SR)
-            ne = min(len(buf), ns + len(nw))
-            buf[ns:ne] += nw[:ne-ns]
-        pos += beat * 4 * 0.5 * 2  # длительность такта
+        chord_idx = ci % len(chord_seq)
+        bass_notes, harm_notes = chord_seq[chord_idx]
+
+        # ── бас (туба: октавный прыжок вверх-вниз) ──
+        for ki, bn in enumerate(bass_notes * 2):
+            s = int((pos + ki * beat) * SR)
+            nw = note(N[bn], beat * 0.85, kind="tuba", vol=0.30)
+            e = min(len(buf), s + len(nw))
+            buf[s:e] += nw[:e-s]
+
+        # ── гармония (кларнет, на 2-й и 4-й удар) ──
+        for hi, hn in enumerate(harm_notes):
+            s = int((pos + beat + hi * b8) * SR)
+            nw = note(N[hn], b8 * 0.9, kind="clarinet", vol=0.18)
+            e = min(len(buf), s + len(nw))
+            buf[s:e] += nw[:e-s]
+
+        # ── мелодия (труба) ──
+        phrase = melody_B if (ci // 4) % 2 else melody_A
+        for mi, mn in enumerate(phrase):
+            s = int((pos + mi * b8) * SR)
+            nw = note(N[mn], b8 * 0.88, kind="trumpet", vol=0.28)
+            e = min(len(buf), s + len(nw))
+            buf[s:e] += nw[:e-s]
+
+        # ── ударные: kick на 1/3, snare на 2/4 ──
+        for ki, off in enumerate([0, beat, 2*beat, 3*beat]):
+            kind_d = "kick" if ki % 2 == 0 else "snare"
+            freq_d = 80 if kind_d == "kick" else 200
+            s = int((pos + off) * SR)
+            nw = note(freq_d, b8 * 0.5, kind=kind_d, vol=0.20 if kind_d=="kick" else 0.14)
+            e = min(len(buf), s + len(nw))
+            buf[s:e] += nw[:e-s]
+
+        pos += beat * 4  # один такт = 4 четверти
         ci += 1
+
     buf = buf[:int(SR * total_sec)]
-    # мягкая нормализация
+    # мягкая компрессия / нормализация
     peak = np.max(np.abs(buf)) or 1.0
-    buf = buf / peak * 0.6
-    # стерео
+    buf = np.tanh(buf / peak * 1.4) * 0.62
+    # fade-in / fade-out
+    fi = int(SR * 1.5)
+    buf[:fi] *= np.linspace(0, 1, fi)
+    fo = int(SR * 2.0)
+    buf[-fo:] *= np.linspace(1, 0, fo)
     stereo = np.column_stack([buf, buf])
     return stereo
 
@@ -365,73 +433,149 @@ def build():
 
     # подбираем фото в нужном порядке с подписями
     plan = [
-        ("photo_2026-06-23_21-47-31.jpg", "Вот она — виновница торжества!"),
-        ("photo_2026-06-23_21-47-56.jpg", "Светлана Третьякова — наша королева!"),
-        ("photo_2026-06-23_21-47-07.jpg", "С любимым мужем — душа в душу"),
-        ("photo_2026-06-23_21-47-11.jpg", "Семья — её главное богатство"),
-        ("photo_2026-06-23_21-47-00.jpg", "Сын — мамина гордость и радость"),
-        ("photo_2026-06-23_21-47-16.jpg", "Дети растут, а мама всё хорошеет!"),
-        ("photo_2026-06-23_21-47-52.jpg", "Хозяйка, каких ещё поискать!"),
-        ("photo_2026-06-23_21-47-37.jpg", "А это — наши верные подруги"),
-        ("photo_2026-06-23_21-47-48.jpg", "Вместе и в радости, и в печали"),
-        ("photo_2026-06-23_21-48-02.jpg", "Где Светлана — там веселье!"),
-        ("photo_2026-06-23_21-47-20.jpg", "За дружбу! За нашу Свету!"),
-        ("photo_2026-06-23_21-48-05.jpg", "Отдыхать мы тоже умеем"),
-        ("photo_2026-06-23_21-56-35.jpg", "Юг, море и лучшие подруги"),
-        ("photo_2026-06-23_21-56-29.jpg", "Загорелые и счастливые!"),
-        ("photo_2026-06-23_21-56-18.jpg", "В любую дорогу — только вместе!"),
+        ("photo_2026-06-23_21-47-31.jpg", "Виновница торжества — Светлана!"),
+        ("photo_2026-06-23_21-47-56.jpg", "Красота не требует возраста"),
+        ("photo_2026-06-23_21-47-07.jpg", "Рядом с ней — её верный рыцарь"),
+        ("photo_2026-06-23_21-47-11.jpg", "Семья — главный её аргумент"),
+        ("photo_2026-06-23_21-47-00.jpg", "Мамина гордость, папина копия"),
+        ("photo_2026-06-23_21-47-16.jpg", "Дети растут, мама молодеет!"),
+        ("photo_2026-06-23_21-47-52.jpg", "Хозяйка, мама, красавица..."),
+        ("photo_2026-06-23_21-47-37.jpg", "А это — её верные соратницы!"),
+        ("photo_2026-06-23_21-47-48.jpg", "Вместе — и в горе, и в шашлыке"),
+        ("photo_2026-06-23_21-48-02.jpg", "Где Света — там праздник!"),
+        ("photo_2026-06-23_21-47-20.jpg", "За дружбу, за радость, за нас!"),
+        ("photo_2026-06-23_21-48-05.jpg", "Умеем и отдыхать!"),
+        ("photo_2026-06-23_21-56-35.jpg", "Море, юг и лучшие подруги"),
+        ("photo_2026-06-23_21-56-29.jpg", "Море нас не сломить!"),
+        ("photo_2026-06-23_21-56-18.jpg", "В любой дороге — вместе!"),
     ]
 
     scenes = []
 
-    # 1. Мосфильм
-    scenes.append(title_card(["МОСФИЛЬМ", "представляет"],
-                             sub="киностудия настоящих друзей", dur=3.8))
-    # 2. Название фильма
-    scenes.append(title_card(["«СВЕТЛАНА И ЕЁ", "ВОЛШЕБНЫЙ ЮБИЛЕЙ»"],
-                             sub="лирическая комедия в одном действии",
-                             dur=4.5, big=58, med=58))
-    # 3. Интертитр-завязка
+    # ── ЗАСТАВКА ──────────────────────────────────────────────
+    scenes.append(title_card(
+        ["МОСФИЛЬМ", "представляет"],
+        sub="при поддержке настоящих друзей", dur=3.5))
+
+    scenes.append(title_card(
+        ["«СВЕТЛАНА", "И ЕЁ ВОЛШЕБНЫЙ ЮБИЛЕЙ»"],
+        sub="душевная комедия в одном действии   18+  (шуток)",
+        dur=4.2, big=56, med=56))
+
+    # ── АКТ I: ЗНАКОМСТВО С ГЕРОИНЕЙ ──────────────────────────
     scenes.append(intertitle(
-        "Эта история — про женщину,\n"
-        "у которой золотое сердце,\n"
-        "светлая голова и самые лучшие друзья.", dur=4.5))
+        "АКТ I\n«Откуда берутся такие женщины»", dur=3.2))
 
-    # 4-10. Фото семьи (первые 7)
-    family_caps = plan[:7]
-    for fn, cap in family_caps:
-        scenes.append(photo_slide(os.path.join(PHOTO_DIR, fn), cap, dur=4.0))
-
-    # 11. Цитата из «Бриллиантовой руки»
     scenes.append(intertitle(
-        "— Светлана, вы прекрасны!\n"
-        "— Это не я, это юбилей меня украшает!", dur=4.2))
+        "Говорят, такие женщины рождаются раз в сто лет.\n"
+        "Нам повезло — мы знаем одну лично.", dur=4.0))
 
-    # 12-18. Фото с друзьями (остальные)
-    for fn, cap in plan[7:]:
-        scenes.append(photo_slide(os.path.join(PHOTO_DIR, fn), cap, dur=3.8))
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[0][0]), plan[0][1], dur=3.8))
 
-    # 19. Цитата в духе «Кавказской пленницы»
     scenes.append(intertitle(
-        "Хочу пожелать: чтобы все наши желания\n"
-        "совпадали с нашими возможностями!\n"
-        "За Светлану!", dur=4.5))
+        "— Светлана, сколько вам лет?\n"
+        "— Столько, сколько надо!\n"
+        "Не больше и не меньше.", dur=3.8))
 
-    # 20. Поздравление
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[1][0]), plan[1][1], dur=3.8))
+
+    # ── АКТ II: СЕМЕЙНАЯ САГА ──────────────────────────────────
+    scenes.append(intertitle(
+        "АКТ II\n«Ячейка общества (и самая лучшая)»", dur=3.0))
+
+    scenes.append(intertitle(
+        "За каждой великой женщиной\n"
+        "стоит великий мужчина.\n"
+        "И очень терпеливый.", dur=3.8))
+
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[2][0]), plan[2][1], dur=3.8))
+
+    scenes.append(intertitle(
+        "Дети — цветы жизни.\n"
+        "А наша Света — садовник\n"
+        "высшей категории!", dur=3.5))
+
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[3][0]), plan[3][1], dur=3.8))
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[4][0]), plan[4][1], dur=3.5))
+
+    scenes.append(intertitle(
+        "— Мама, ты самая лучшая!\n"
+        "— Знаю. Но спасибо, что напомнил.", dur=3.5))
+
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[5][0]), plan[5][1], dur=3.5))
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[6][0]), plan[6][1], dur=3.8))
+
+    # ── АКТ III: ДРУЖЕСКАЯ ХРОНИКА ────────────────────────────
+    scenes.append(intertitle(
+        "АКТ III\n«Подруги. Документальные свидетельства»", dur=3.0))
+
+    scenes.append(intertitle(
+        "Настоящая подруга — это та,\n"
+        "которая знает всё...\n"
+        "и всё равно дружит.", dur=3.8))
+
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[7][0]), plan[7][1], dur=3.8))
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[8][0]), plan[8][1], dur=3.5))
+
+    scenes.append(intertitle(
+        "Застолье — это не просто стол.\n"
+        "Это место, где рождаются\n"
+        "великие планы и великая дружба.", dur=3.8))
+
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[9][0]),  plan[9][1],  dur=3.5))
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[10][0]), plan[10][1], dur=3.5))
+
+    # ── АКТ IV: ОТДЫХ ─────────────────────────────────────────
+    scenes.append(intertitle(
+        "АКТ IV\n«Культурный отдых и оздоровление»", dur=3.0))
+
+    scenes.append(intertitle(
+        "Учёные доказали: женщины,\n"
+        "которые умеют отдыхать,\n"
+        "живут дольше и веселее!", dur=3.8))
+
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[11][0]), plan[11][1], dur=3.5))
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[12][0]), plan[12][1], dur=3.5))
+
+    scenes.append(intertitle(
+        "На море всё лечится:\n"
+        "хандра, усталость, понедельник...\n"
+        "и даже возраст!", dur=3.8))
+
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[13][0]), plan[13][1], dur=3.5))
+    scenes.append(photo_slide(os.path.join(PHOTO_DIR, plan[14][0]), plan[14][1], dur=3.8))
+
+    # ── ФИНАЛ ──────────────────────────────────────────────────
+    scenes.append(intertitle(
+        "ФИНАЛ\n«Торжественная часть»", dur=2.8))
+
+    scenes.append(intertitle(
+        "Хочу пожелать тебе, Светлана,\n"
+        "чтобы все твои желания\n"
+        "совпадали с твоими возможностями!\n"
+        "А возможности — росли!", dur=4.5))
+
     scenes.append(color_slide(
         "С ЮБИЛЕЕМ,\nСВЕТЛАНА!",
-        sub="Будь здорова, любима и счастлива.\nПусть жизнь будет как добрая советская комедия —\nс юмором, теплом и хорошим концом!",
-        bg=(20, 55, 110), text_color=(255, 222, 90), dur=5.2))
+        sub="Будь здорова, любима и счастлива!\n"
+            "Пусть жизнь будет как добрая советская комедия —\n"
+            "с юмором, теплом и хорошим концом!",
+        bg=(20, 55, 110), text_color=(255, 222, 90), dur=5.0))
 
-    # 21. От друзей
+    scenes.append(intertitle(
+        "— Как вы себя чувствуете в юбилей?\n"
+        "— Как огурчик!\n"
+        "— В смысле — свежая?\n"
+        "— В смысле — в рассоле, но бодрая!", dur=4.2))
+
     scenes.append(color_slide(
         "Мы тебя очень любим!",
-        sub="С теплом и обнимашками — твои друзья",
-        bg=(95, 35, 90), text_color=(255, 200, 220), dur=4.5))
+        sub="С теплом, обнимашками и тортиком —\nтвои друзья ❤",
+        bg=(110, 30, 80), text_color=(255, 200, 220), dur=4.5))
 
-    # 22. КОНЕЦ
-    scenes.append(title_card(["КОНЕЦ"],
-                             sub="...а точнее — только всё начинается!", dur=3.6))
+    scenes.append(title_card(
+        ["К О Н Е Ц"],
+        sub="...а в жизни — только всё начинается!", dur=3.5))
 
     # склейка с переходами
     video = scenes[0]
