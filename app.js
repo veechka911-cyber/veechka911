@@ -285,6 +285,7 @@ function renderDiagnosis(id){
         <button data-age="preg" class="${age==='preg'?'active':''}">Беременная</button>
       </div>
       ${ageBanner}
+      ${d.fig ? `<figure class="dx-fig">${d.fig}${d.figcap?`<figcaption>🖼 Схема: ${esc(d.figcap)}</figcaption>`:''}</figure>` : ''}
       ${d.desc ? `<details open><summary>📖 Описание</summary><p>${esc(d.desc)}</p>${d.etiol?`<p><b>Этиология:</b> ${esc(d.etiol)}</p>`:''}${d.classes?`<p><b>Классификация:</b> ${esc(d.classes)}</p>`:''}</details>` : ''}
       ${d.sx && d.sx.length ? `<details open><summary>🔎 Симптомы (жалобы)</summary><ul>${d.sx.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
       ${d.dx && d.dx.length ? `<details open><summary>🔬 Диагностика</summary><ul>${d.dx.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
@@ -543,6 +544,7 @@ function renderMisc(){
   backBtn.style.display = 'none';
   view.innerHTML = `
     <div class="tile-grid">
+      <a class="tile" href="#calc"><div class="t">🧮 Калькуляторы</div><div class="s">ВГД, дозы, острота</div></a>
       <a class="tile" href="#abbr"><div class="t">🔤 Сокращения</div><div class="s">${ABBR.length} аббревиатур</div></a>
       <a class="tile" href="#icd"><div class="t">📂 МКБ-10 H00-H59</div><div class="s">Дерево кодов</div></a>
       <a class="tile" href="#favs"><div class="t">⭐ Избранное</div><div class="s">${state.fav.dx.length+state.fav.rx.length} записей</div></a>
@@ -610,12 +612,61 @@ function renderAbout(){
         <li>Электронный справочник ВИДАЛЬ 2023</li>
         <li>Клинические рекомендации Минздрава РФ 2023–2025</li>
         <li>Государственный реестр ЛС РФ (ГРЛС)</li>
-        <li>Список ЛС с дозами для курса «Красный глаз», Никитина А.А., 2023</li>
       </ul>
       <p class="src" style="color:var(--warn);font-weight:600;margin-top:12px">⚠️ Справочник предназначен для специалистов и не заменяет осмотр пациента. Дозировки проверяйте по актуальной инструкции и клиническим рекомендациям МЗ РФ.</p>
     </article>
     ${footer()}
   `;
+}
+
+// ─── search ────────────────────────────────────────────────────
+// ─── fuzzy helpers (typo-tolerant search) ──────────────────────
+// Ограниченное расстояние Левенштейна: возвращает dist или max+1, если превышено.
+function levBounded(a, b, max){
+  // Расстояние OSA (Дамерау–Левенштейн): учитывает перестановку соседних букв как 1 правку.
+  const la = a.length, lb = b.length;
+  if (Math.abs(la - lb) > max) return max + 1;
+  if (!la) return lb; if (!lb) return la;
+  let pp = null;                       // строка i-2
+  let prev = new Array(lb + 1);        // строка i-1
+  for (let j = 0; j <= lb; j++) prev[j] = j;
+  for (let i = 1; i <= la; i++){
+    const cur = new Array(lb + 1); cur[0] = i;
+    const ca = a.charCodeAt(i - 1);
+    let best = i;
+    for (let j = 1; j <= lb; j++){
+      const cb = b.charCodeAt(j - 1);
+      const cost = ca === cb ? 0 : 1;
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && ca === b.charCodeAt(j - 2) && a.charCodeAt(i - 2) === cb)
+        v = Math.min(v, pp[j - 2] + 1);   // транспозиция соседних символов
+      cur[j] = v; if (v < best) best = v;
+    }
+    if (best > max) return max + 1;
+    pp = prev; prev = cur;
+  }
+  return prev[lb];
+}
+function maxDistFor(w){ return w.length >= 10 ? 2 : 1; }
+function tokenize(s){ return norm(s).split(' ').filter(Boolean); }
+// Слово запроса qw похоже на какое-либо слово из toks (подстрока или малое число опечаток)?
+function wordFuzzy(qw, toks){
+  if (qw.length < 3) return false;
+  const md = maxDistFor(qw);
+  for (const t of toks){
+    if (t.length < 2) continue;
+    if (t.includes(qw)) return true;                                   // qw — часть слова (префикс/вхождение)
+    if (md > 0 && levBounded(qw, t, md) <= md) return true;            // опечатка в слове целиком
+    if (md > 0 && t.length > qw.length &&
+        levBounded(qw, t.slice(0, qw.length), md) <= md) return true;  // опечатка в начале длинного слова
+  }
+  return false;
+}
+// Все слова запроса должны нечётко совпасть со словами поля.
+function fuzzyAll(qWords, fieldText){
+  if (!qWords.length) return false;
+  const toks = tokenize(fieldText);
+  return qWords.every(qw => wordFuzzy(qw, toks));
 }
 
 // ─── search ────────────────────────────────────────────────────
@@ -628,23 +679,64 @@ function renderSearch(q){
   const nq = norm(q);
   const nqEn = norm(ru2en(q));
   if (!nq && !nqEn) { view.innerHTML = '<div class="empty">Введите запрос ≥ 2 символов</div>' + footer(); return; }
-  const dx = DIAGNOSES.filter(d => {
+  // Нечёткий поиск включаем только для запросов от 4 символов (чтобы короткие не давали мусор).
+  const useFuzzy = nq.length >= 4;
+  const qWords   = nq.split(' ').filter(Boolean);
+  const qWordsEn = nqEn.split(' ').filter(Boolean);
+
+  // ── Диагнозы: сначала точное вхождение (по широким полям), затем нечётко (по названию и синонимам) ──
+  const dxHit = new Set();
+  const dxExact = DIAGNOSES.filter(d => {
     const hay = norm([d.name, (d.syn||[]).join(' '), d.icd, (d.sx||[]).join(' '), d.desc||''].join(' '));
-    return hay.includes(nq) || (nqEn && hay.includes(nqEn));
-  }).slice(0, 50);
-  const rx = DRUGS.filter(d => {
+    const ok = hay.includes(nq) || (nqEn && hay.includes(nqEn));
+    if (ok) dxHit.add(d.id);
+    return ok;
+  });
+  const dxFuzzy = useFuzzy ? DIAGNOSES.filter(d => {
+    if (dxHit.has(d.id)) return false;
+    const field = [d.name, (d.syn||[]).join(' ')].join(' ');
+    return fuzzyAll(qWords, field) || (qWordsEn.length ? fuzzyAll(qWordsEn, field) : false);
+  }) : [];
+  const dx = dxExact.concat(dxFuzzy).slice(0, 50);
+
+  // ── Препараты: точно по широким полям, нечётко по МНН и торговым названиям ──
+  const rxHit = new Set();
+  const rxExact = DRUGS.filter(d => {
     const hay = norm([d.inn, (d.brand||[]).join(' '), d.group||'', d.atc||'', (d.ind||[]).join(' ')].join(' '));
-    return hay.includes(nq) || (nqEn && hay.includes(nqEn));
-  }).slice(0, 50);
-  const algo = ALGORITHMS.filter(a => norm(a.title+' '+(a.subtitle||'')).includes(nq)).slice(0,10);
-  const abbr = ABBR.filter(a => norm(a.k+' '+a.v).includes(nq)).slice(0,30);
+    const ok = hay.includes(nq) || (nqEn && hay.includes(nqEn));
+    if (ok) rxHit.add(d.id);
+    return ok;
+  });
+  const rxFuzzy = useFuzzy ? DRUGS.filter(d => {
+    if (rxHit.has(d.id)) return false;
+    const field = [d.inn, (d.brand||[]).join(' ')].join(' ');
+    return fuzzyAll(qWords, field) || (qWordsEn.length ? fuzzyAll(qWordsEn, field) : false);
+  }) : [];
+  const rx = rxExact.concat(rxFuzzy).slice(0, 50);
+
+  const algo = ALGORITHMS.filter(a => {
+    const f = a.title + ' ' + (a.subtitle||'');
+    return norm(f).includes(nq) || (useFuzzy && fuzzyAll(qWords, f));
+  }).slice(0, 10);
+  const abbr = ABBR.filter(a => {
+    const f = a.k + ' ' + a.v;
+    return norm(f).includes(nq) || (useFuzzy && fuzzyAll(qWords, f));
+  }).slice(0, 30);
+  const scl = (typeof SCALES !== 'undefined' ? SCALES : []).filter(s => {
+    const f = s.title + ' ' + (s.subtitle||'');
+    return norm(f).includes(nq) || (useFuzzy && fuzzyAll(qWords, f));
+  }).slice(0, 12);
+
+  const onlyFuzzy = !dxExact.length && !rxExact.length && (dxFuzzy.length || rxFuzzy.length);
   view.innerHTML = `
     <div class="section-title">Результаты: «${esc(q)}»</div>
+    ${onlyFuzzy ? `<div class="amb-banner">🔎 Точных совпадений нет — показаны близкие по написанию (возможна опечатка).</div>` : ''}
     ${dx.length ? `<div class="section-title">🩺 Диагнозы (${dx.length})</div>${dx.map(diagnosisListItem).join('')}` : ''}
     ${rx.length ? `<div class="section-title">💊 Препараты (${rx.length})</div>${rx.map(drugListItem).join('')}` : ''}
     ${algo.length ? `<div class="section-title">⚡ Алгоритмы (${algo.length})</div>${algo.map(a => `<a class="list-item" href="#algo/${esc(a.id)}"><div class="lt">${esc(a.title)}</div></a>`).join('')}` : ''}
     ${abbr.length ? `<div class="section-title">🔤 Сокращения (${abbr.length})</div><div class="card"><dl class="abbr-grid">${abbr.map(a => `<dt>${esc(a.k)}</dt><dd>${esc(a.v)}</dd>`).join('')}</dl></div>` : ''}
-    ${!dx.length && !rx.length && !algo.length && !abbr.length ? '<div class="empty"><span class="em">∅</span>Ничего не найдено</div>' : ''}
+    ${scl.length ? `<div class="section-title">📊 Шкалы и нормы (${scl.length})</div>${scl.map(s => `<a class="list-item" href="#scale/${esc(s.id)}"><div class="lt">${esc(s.title)}</div>${s.subtitle?`<div class="ls">${esc(s.subtitle)}</div>`:''}</a>`).join('')}` : ''}
+    ${!dx.length && !rx.length && !algo.length && !abbr.length && !scl.length ? '<div class="empty"><span class="em">∅</span>Ничего не найдено</div>' : ''}
     ${footer()}
   `;
 }
@@ -652,12 +744,57 @@ function renderSearch(q){
 // ─── footer ────────────────────────────────────────────────────
 function footer(){
   return `<div class="app-footer">
-    <div>Дозировки сверены с инструкциями производителей (Видаль 2023) и КР МЗ РФ. Список препаратов курса «Красный глаз»: Никитина А.А.</div>
+    <div>Дозировки сверены с инструкциями производителей (Видаль 2023) и КР МЗ РФ.</div>
     <div class="dis">⚠️ Не заменяет очный осмотр пациента и решение лечащего врача.</div>
   </div>`;
 }
 
 // ─── main render ──────────────────────────────────────────────
+function renderCalc(){
+  titleEl.textContent = 'Калькуляторы';
+  backBtn.style.display = '';
+  view.innerHTML = `
+    <div class="amb-banner">🧮 Клинические калькуляторы. Результаты ориентировочны и не заменяют осмотр и клиническое решение.</div>
+    <article class="card calc">
+      <h3>🎯 Целевое ВГД по стадии глаукомы</h3>
+      <div class="calc-row"><label>Исходное ВГД, мм рт.ст.</label><input id="ci_b" type="number" inputmode="decimal" min="5" max="60" step="0.5" oninput="window.__calc.targetIop()"></div>
+      <div class="calc-row"><label>Стадия</label><select id="ci_st" onchange="window.__calc.targetIop()"><option value="1">Начальная (I)</option><option value="2">Развитая (II)</option><option value="3">Далеко зашедшая (III–IV)</option></select></div>
+      <div class="calc-out" id="co_iop">— введите исходное ВГД</div>
+      <div class="calc-note">EGS 2025: начальная −20–30%, развитая −30–40%, далеко зашедшая &gt;40% (цель &lt; 12–14 мм рт.ст.).</div>
+    </article>
+    <article class="card calc">
+      <h3>📐 Поправка ВГД на толщину роговицы (ЦТР)</h3>
+      <div class="calc-row"><label>Измеренное ВГД, мм рт.ст.</label><input id="cc_m" type="number" inputmode="decimal" min="5" max="60" step="0.5" oninput="window.__calc.cctIop()"></div>
+      <div class="calc-row"><label>ЦТР, мкм</label><input id="cc_cct" type="number" inputmode="numeric" min="400" max="700" step="1" oninput="window.__calc.cctIop()"></div>
+      <div class="calc-out" id="co_cct">— введите ВГД и ЦТР</div>
+      <div class="calc-note">Ориентировочно ≈ 0,5 мм рт.ст. на каждые 10 мкм отклонения от 550 мкм (номограммы различаются). Не единственный критерий.</div>
+    </article>
+    <article class="card calc">
+      <h3>👁 Конвертер остроты зрения</h3>
+      <div class="calc-row"><label>Десятичная острота (напр. 0,5)</label><input id="cv_d" type="number" inputmode="decimal" min="0.01" max="2" step="0.05" oninput="window.__calc.vaConv()"></div>
+      <div class="calc-out" id="co_va">— введите десятичную остроту</div>
+      <div class="calc-note">logMAR = −log₁₀(острота). Snellen: фут 20/x и метр 6/x.</div>
+    </article>
+    <article class="card calc">
+      <h3>🧒 Педиатрическая доза (мг/кг)</h3>
+      <div class="calc-row"><label>Вес ребёнка, кг</label><input id="cp_w" type="number" inputmode="decimal" min="0.5" max="120" step="0.5" oninput="window.__calc.pedDose()"></div>
+      <div class="calc-row"><label>Доза, мг/кг</label><input id="cp_d" type="number" inputmode="decimal" min="0.1" max="100" step="0.5" oninput="window.__calc.pedDose()"></div>
+      <div class="calc-row"><label>Макс. разовая, мг (необязательно)</label><input id="cp_max" type="number" inputmode="decimal" min="1" step="1" oninput="window.__calc.pedDose()"></div>
+      <div class="calc-out" id="co_ped">— введите вес и дозу</div>
+      <div class="calc-note">Разовая доза = вес × доза/кг (ограничено максимумом). Сверяйте с инструкцией препарата.</div>
+    </article>
+    <article class="card calc">
+      <h3>🔄 Транспозиция очкового рецепта</h3>
+      <div class="calc-row"><label>Sph (сфера), дптр</label><input id="ct_sph" type="number" inputmode="decimal" step="0.25" oninput="window.__calc.transp()"></div>
+      <div class="calc-row"><label>Cyl (цилиндр), дптр</label><input id="ct_cyl" type="number" inputmode="decimal" step="0.25" oninput="window.__calc.transp()"></div>
+      <div class="calc-row"><label>Ось, град (0–180)</label><input id="ct_ax" type="number" inputmode="numeric" min="0" max="180" step="1" oninput="window.__calc.transp()"></div>
+      <div class="calc-out" id="co_transp">— введите Sph, Cyl и ось</div>
+      <div class="calc-note">Правило: Sph′ = Sph + Cyl · Cyl′ = −Cyl · ось′ = ось ± 90°. Оптическая сила эквивалентна.</div>
+    </article>
+    ${footer()}
+  `;
+}
+
 function render(){
   // close any open <details> behavior reset
   window.scrollTo({top:0});
@@ -669,7 +806,7 @@ function render(){
       || (id==='drugs' && (route==='rx' || route==='atc' || route==='alldrugs'))
       || (id==='algorithms' && route==='algo')
       || (id==='scales' && route==='scale')
-      || (id==='misc' && ['abbr','icd','favs','about'].includes(route));
+      || (id==='misc' && ['abbr','icd','favs','about','calc'].includes(route));
     b.classList.toggle('active', active);
   });
   if (route !== 'search') { searchInp.value = ''; clearBtn.style.display = 'none'; }
@@ -692,12 +829,54 @@ function render(){
     case 'icd':       renderICD(); break;
     case 'favs':      renderFavs(); break;
     case 'about':     renderAbout(); break;
+    case 'calc':      renderCalc(); break;
     case 'search':    renderSearch(args.join('/')); break;
     default:          renderHomeDiagnoses();
   }
 }
 
 // expose for inline handlers
+window.__calc = {
+  _n: id => { const el = document.getElementById(id); return el ? parseFloat(String(el.value).replace(',', '.')) : NaN; },
+  targetIop(){
+    const b=this._n('ci_b'), stEl=document.getElementById('ci_st'), out=document.getElementById('co_iop');
+    if(!out) return; const st = stEl ? stEl.value : '1';
+    if(!(b>0)){ out.textContent='— введите исходное ВГД'; return; }
+    const r=x=>Math.round(x*10)/10;
+    if(st==='1') out.innerHTML='Цель: <b>'+r(b*0.70)+'–'+r(b*0.80)+'</b> мм рт.ст. (−20–30%)';
+    else if(st==='2') out.innerHTML='Цель: <b>'+r(b*0.60)+'–'+r(b*0.70)+'</b> мм рт.ст. (−30–40%)';
+    else out.innerHTML='Цель: <b>&lt; '+r(b*0.60)+'</b> мм рт.ст. (снижение &gt;40%); абсолютно <b>&lt; 12–14</b> мм рт.ст.';
+  },
+  cctIop(){
+    const m=this._n('cc_m'), cct=this._n('cc_cct'), out=document.getElementById('co_cct');
+    if(!out) return;
+    if(!(m>0)||!(cct>0)){ out.textContent='— введите ВГД и ЦТР'; return; }
+    const corr=(cct-550)/10*0.5, adj=Math.round((m-corr)*10)/10;
+    out.innerHTML='Скорректированное ВГД ≈ <b>'+adj+'</b> мм рт.ст. (поправка '+(corr>=0?'−':'+')+Math.abs(Math.round(corr*10)/10)+')';
+  },
+  vaConv(){
+    const d=this._n('cv_d'), out=document.getElementById('co_va');
+    if(!out) return;
+    if(!(d>0)){ out.textContent='— введите десятичную остроту'; return; }
+    out.innerHTML='logMAR <b>'+(-Math.log10(d)).toFixed(2)+'</b> · Snellen <b>20/'+Math.round(20/d)+'</b> (фут) · <b>6/'+(Math.round(6/d*10)/10)+'</b> (метр)';
+  },
+  pedDose(){
+    const w=this._n('cp_w'), d=this._n('cp_d'), mx=this._n('cp_max'), out=document.getElementById('co_ped');
+    if(!out) return;
+    if(!(w>0)||!(d>0)){ out.textContent='— введите вес и дозу'; return; }
+    let dose=w*d, capped=false; if(mx>0 && dose>mx){ dose=mx; capped=true; }
+    out.innerHTML='Разовая доза ≈ <b>'+(Math.round(dose*100)/100)+' мг</b>'+(capped?' <span style="color:var(--warn)">(ограничено максимумом)</span>':'');
+  },
+  transp(){
+    const sph=this._n('ct_sph'), cyl=this._n('ct_cyl'), axEl=document.getElementById('ct_ax'), out=document.getElementById('co_transp');
+    if(!out) return;
+    const ax=axEl?parseFloat(String(axEl.value).replace(',','.')):NaN;
+    if(isNaN(sph)||isNaN(cyl)||isNaN(ax)){ out.textContent='— введите Sph, Cyl и ось'; return; }
+    const f=x=>(x>=0?'+':'')+(Math.round(x*100)/100);
+    const sph2=sph+cyl, cyl2=-cyl; let ax2=ax+90; if(ax2>180) ax2-=180; if(ax2<=0) ax2+=180;
+    out.innerHTML='Эквивалент: <b>'+f(sph2)+' '+f(cyl2)+' ax '+Math.round(ax2)+'°</b>';
+  }
+};
 window.__toggleFav = (t, id) => { toggleFav(t, id); render(); };
 
 render();
